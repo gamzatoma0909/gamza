@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>제63회 대한임상병리사협회 종합학술대회</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutral Harmony -->
+    <!-- Application Structure Plan: A dashboard-style, interactive timeline view is chosen over a static table. The primary navigation consists of tabs for each day (Sept 20/21). The main view is a time-based grid where rows represent time slots and columns represent locations, allowing users to see concurrent sessions at a glance. This structure directly addresses the core user task of navigating a complex, multi-track schedule. Clicking a session card opens a modal with details, preventing context loss. Filters for session categories allow users to personalize the view, enhancing usability and planning efficiency. -->
+    <!-- Visualization & Content Choices: Report Info: Session distribution by category -> Goal: Inform/Analyze -> Viz/Presentation: Donut Chart (Chart.js/Canvas) -> Interaction: Clicking a chart segment filters the main schedule grid -> Justification: Provides a quick, high-level overview of the conference's academic focus and acts as an intuitive, visual filtering mechanism. Report Info: Full schedule details -> Goal: Organize/Compare -> Presentation: Interactive Timeline Grid (HTML/CSS Grid) -> Interaction: Day selection, hover for tooltip, click for modal -> Justification: The grid is the most effective way to visualize concurrent events. The modal for details uses progressive disclosure to keep the main interface clean. All elements are built with standard HTML/JS, confirming NO SVG/Mermaid. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #fdfcf9;
+            color: #4a4a4a;
+        }
+        .active-tab {
+            border-bottom-color: #0d9488;
+            color: #0d9488;
+            font-weight: 700;
+        }
+        .session-card {
+            transition: all 0.3s ease;
+            border-left-width: 4px;
+        }
+        .session-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .modal-backdrop {
+            transition: opacity 0.3s ease;
+        }
+        .modal-content {
+            transition: transform 0.3s ease;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-teal-800">제63회 대한임상병리사협회 종합학술대회</h1>
+            <p class="text-lg text-slate-600 mt-2">인터랙티브 타임테이블</p>
+        </header>
+
+        <main>
+            <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-8">
+                <h2 class="text-xl font-bold text-teal-700 mb-4">학술대회 개요</h2>
+                <p class="text-slate-700 mb-6">
+                    본 인터랙티브 일정표는 제63회 대한임상병리사협회 종합학술대회의 전체 프로그램을 시각적으로 탐색할 수 있도록 제작되었습니다. 날짜를 선택하여 원하는 세션을 찾아보세요. 각 세션 카드를 클릭하면 발표자, 주제 등 상세 정보를 확인할 수 있습니다.
+                </p>
+                <div class="chart-container">
+                    <canvas id="sessionChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg">
+                <div class="border-b border-slate-200">
+                    <nav class="flex -mb-px px-4 md:px-6">
+                        <button data-day="20" class="day-tab text-lg py-4 px-6 border-b-2 border-transparent active-tab">9월 20일 (토)</button>
+                        <button data-day="21" class="day-tab text-lg py-4 px-6 border-b-2 border-transparent">9월 21일 (일)</button>
+                    </nav>
+                </div>
+
+                <div class="p-4 md:p-6">
+                    <div id="schedule-container" class="overflow-x-auto">
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+        <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop"></div>
+        <div id="modal-content" class="bg-white rounded-lg shadow-2xl w-full max-w-2xl z-10 transform scale-95 modal-content max-h-[90vh] overflow-y-auto">
+            <div class="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+                <h3 id="modal-title" class="text-xl font-bold text-teal-800"></h3>
+                <button id="modal-close" class="text-slate-500 hover:text-slate-800">&times;</button>
+            </div>
+            <div class="p-6">
+                <div class="mb-4">
+                    <p class="text-sm text-slate-500">시간</p>
+                    <p id="modal-time" class="font-semibold"></p>
+                </div>
+                <div class="mb-4">
+                    <p class="text-sm text-slate-500">장소</p>
+                    <p id="modal-location" class="font-semibold"></p>
+                </div>
+                <div id="modal-chair-container" class="mb-4">
+                    <p class="text-sm text-slate-500">좌장</p>
+                    <p id="modal-chair" class="font-semibold"></p>
+                </div>
+                <div id="modal-details-container">
+                    <p class="text-sm text-slate-500 border-b pb-2 mb-2">세부 발표</p>
+                    <div id="modal-details"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const scheduleData = [
+            { day: 20, startTime: '09:00', endTime: '10:00', category: '정책', location: 'Room 201', session: '연구정책과제 심포지엄', chair: '김창수(충북도회)', details: [{ time: '09:00-09:30', speaker: '이동섭', topic: '국가시험과 교육을 위한 직무기반 임상병리사 전용 의학용어 표준안 개발', affiliation: '혜전대학교' }, { time: '09:30-10:00', speaker: '최병호', topic: '중소병의원 적정임금보고서', affiliation: '아주대학교병원' }] },
+            { day: 20, startTime: '09:00', endTime: '11:00', category: '국제', location: 'Room 101+102+103', session: '국제심포지엄', chair: 'Jun Young Park', details: [{ time: '09:00-09:20', speaker: 'Jl young Mun', topic: "Asia's Evolving Landscape in Medical Technologists", affiliation: 'KOR' }, { time: '09:20-09:40', speaker: 'Hiroyuki Nozaka', topic: 'Al-Driven Blood Diagnostic Solutions', affiliation: 'JPN' }, { time: '09:40-10:00', speaker: 'Chun-Yi, Wang', topic: 'Data-Driven Strategies for Clinical Laboratory Management', affiliation: 'TW' }, { time: '10:00-10:20', speaker: 'SATO Akira', topic: 'Implementation of telepathology', affiliation: 'JPN' }, { time: '10:20-10:40', speaker: 'Seung jin Lee', topic: 'Rapid detection of Acinetobacter baumannii', affiliation: 'KOR' }] },
+            { day: 20, startTime: '09:00', endTime: '12:00', category: '학회', location: '컨벤션홀 B+C', session: '대한임상검사과학회 심포지엄', chair: '사회자: 전승환, 좌장: 윤현, 임건일', details: [{ time: '09:00-09:10', speaker: '성현호', topic: '환영사', affiliation: '대한임상검사과학회' }, { time: '09:10-10:20', speaker: '우수논문상 선정자', topic: '대한임상검사과학회 우수논문발표 및 시상', affiliation: '미정' }, { time: '11:00-12:00', speaker: '윤현', topic: '임상검사 실무자를 위한 논문작성 가이드', affiliation: '원광보건대학교' }] },
+            { day: 20, startTime: '09:00', endTime: '18:00', category: '기타', location: '전시장', session: '부스전시', chair: '', details: [] },
+            { day: 20, startTime: '09:00', endTime: '18:00', category: '기타', location: '포스터 행사장', session: '포스터 전시', chair: '', details: [] },
+            { day: 20, startTime: '10:00', endTime: '11:00', category: '면역', location: 'Room 201', session: '임상면역검사학회 심포지엄', chair: '이정현, 임영희', details: [{ time: '10:00-10:30', speaker: '이소민', topic: '장기이식 전 검사에서 PRA, DS-HLA, HLA교차시험의 연관성분석', affiliation: '가톨릭대학교 은평성모병원' }, { time: '10:30-11:00', speaker: '공주연', topic: 'RPR, TPLA 시약 평가', affiliation: '삼광의료재단' }] },
+            { day: 20, startTime: '10:00', endTime: '12:00', category: '세포', location: 'Room 202', session: '조직세포검사학회 심포지엄', chair: '이종근, 이권우', details: [{ time: '10:00-10:30', speaker: '최병일', topic: 'Understanding Cytology and Gross examination of Papillary Thyroid Carcinoma', affiliation: '순천향대학교 부천병원' }, { time: '10:30-11:00', speaker: '정다솜', topic: 'Gross-to-Digitalpathology diagnosis:Lung', affiliation: '서울대학교병원' }, { time: '11:00-12:00', speaker: '박노진', topic: 'Cell cycle control system', affiliation: '삼성서울병원' }] },
+            { day: 20, startTime: '10:00', endTime: '12:00', category: '융합', location: 'Room 203', session: '미래융합심포지엄', chair: '이상훈(충남도회)', details: [{ time: '10:00-10:20', speaker: '한명희', topic: '시약 로트 변경 시 동등성 평가의 실무 적용', affiliation: '이화여자대학교부속서울병원' }, { time: '10:20-10:40', speaker: '엄기철', topic: '최적의 채혈 시스템 제공을 위한 채혈 이력 코드 개발', affiliation: '강북삼성병원' }, { time: '10:40-11:00', speaker: '차연호', topic: '핵의학 검체검사의 불확도 요인을 통한 측정불확도 추정', affiliation: '가톨릭대학교 인천성모병원' }, { time: '11:00-11:20', speaker: '김동욱', topic: '위암에서 HER2 단백 발현과 유전자 증폭 방법의 비교 연구', affiliation: '대구파티마병원' }, { time: '11:20-11:40', speaker: '김대웅', topic: 'Improving Regional Allocation in the Clinical Laboratory Technologist Exam', affiliation: '순천향대학교 천안병원' }, { time: '11:40-12:00', speaker: '김지혜', topic: '진단검사 실시간 모니터링 시스템의 구축과 활용', affiliation: '서울아산병원' }] },
+            { day: 20, startTime: '11:00', endTime: '12:00', category: '화학', location: 'Room 201', session: '임상화학검사학회 심포지엄', chair: '남현수, 정은진', details: [{ time: '11:00-12:00', speaker: '조종보', topic: '신규 검사항목 평가 기준 설정 고찰', affiliation: '가톨릭대학교 부천성모병원' }] },
+            { day: 20, startTime: '11:00', endTime: '13:00', category: '국제', location: 'Room 101+102+103', session: '국제학생포럼', chair: '', details: [{ time: '11:03-11:13', speaker: 'Prof. Sang-Il Park & Yeonwoo Jung', topic: 'Strengthening Professional Expertise of Clinical Laboratory Scientists', affiliation: 'KOR' }, { time: '11:23-11:33', speaker: 'Kazune Yamagiwa', topic: 'Conquering Food Allergies', affiliation: 'JPN' }] },
+            { day: 20, startTime: '12:00', endTime: '13:00', category: '국제', location: 'Room 201', session: '광주시회 국제심포지엄', chair: '', details: [{ time: '12:05-12:20', speaker: 'Chang', topic: 'The application of NGS tool in infectious disease', affiliation: 'NT-TAMT' }, { time: '12:25-12:40', speaker: '김용진', topic: 'Anti-Obesity Effects of Lactobacillus', affiliation: 'GJ-KAMT' }, { time: '12:45-13:00', speaker: 'Ping', topic: 'Leveraging Al and Automation', affiliation: 'NT-TAMT' }] },
+            { day: 20, startTime: '13:00', endTime: '14:00', category: '공중보건', location: 'Room 201', session: '공중보건검사학회 심포지엄', chair: '정문태(평창군의료원)', details: [{ time: '13:10-13:40', speaker: '서재룡', topic: '최근 의료동향과 주요 보건정책 소개', affiliation: '서울시청' }] },
+            { day: 20, startTime: '13:00', endTime: '14:00', category: '핵의학', location: 'Room 202', session: '임상핵의학검사학회 심포지엄', chair: '박준모', details: [{ time: '13:00-13:20', speaker: '정흥수', topic: "Westgard Multi-Rules의 효율적 적용", affiliation: '삼성서울병원' }, { time: '13:20-13:40', speaker: '이선호', topic: '갑상샘암 환자의 추적관찰 검사시약간 간섭 분석', affiliation: '서울아산병원' }, { time: '13:40-14:00', speaker: '박준영', topic: 'Ga-68표지 방사성의약품의 허가 및 개발동향', affiliation: '세브란스병원' }] },
+            { day: 20, startTime: '13:00', endTime: '14:00', category: '정보', location: 'Room 203', session: '임상검사정보학회 심포지엄', chair: '이창경', details: [{ time: '13:00-13:30', speaker: '송성수', topic: '검사실 위험관리', affiliation: '분당제생병원' }, { time: '13:30-14:00', speaker: '김기연', topic: 'AI(인공지능) 검사실의 현재와 미래', affiliation: 'ACK' }] },
+            { day: 20, startTime: '13:00', endTime: '15:00', category: '정책', location: '컨벤션홀 A', session: '정책심포지엄', chair: '오영호', details: [{ time: '13:00-13:10', speaker: '이광우', topic: '개회사', affiliation: '대한임상병리사협회' }, { time: '13:10-13:30', speaker: '김기유', topic: '감염관리실 임상병리사의 업무', affiliation: '대한임상병리사협회' }, { time: '13:30-14:30', speaker: '지정토론', topic: '지정토론 및 질의·응답', affiliation: '' }] },
+            { day: 20, startTime: '13:00', endTime: '15:00', category: '정도관리', location: 'Room 101+102+103', session: '대한진단검사정도관리협회 심포지엄', chair: '문성식(대구시회)', details: [{ time: '13:00-13:40', speaker: '정재우', topic: '임상화학검사 도입시 평가', affiliation: '동국대학교 일산병원' }, { time: '13:40-14:20', speaker: '김인숙', topic: '진단혈액검사 도입시 평가', affiliation: '부산대학교병원' }, { time: '14:20-15:00', speaker: '한민제', topic: '분자유전검사 도입시 평가', affiliation: '한림대학교 강동성심병원' }] },
+            { day: 20, startTime: '14:00', endTime: '15:00', category: '수혈', location: 'Room 201', session: '임상수혈검사학회 심포지엄', chair: '김은영', details: [{ time: '14:00-15:00', speaker: '김동찬', topic: '수혈의 역사, 수혈 후 급성폐손상 임상예', affiliation: '송호대학교' }] },
+            { day: 20, startTime: '14:00', endTime: '15:00', category: '유전', location: 'Room 202', session: '임상유전검사학회 심포지엄', chair: '진현석, 안정욱', details: [{ time: '14:00-14:30', speaker: '김민지', topic: 'Preimplantation Genetic Testing (PGT-A/SR)', affiliation: 'CHA Biotech' }, { time: '14:30-15:00', speaker: '홍예슬', topic: 'Preimplantation Genetic Testing (PGT-M)', affiliation: 'CHA Biotech' }] },
+            { day: 20, startTime: '14:00', endTime: '15:00', category: '생리', location: 'Room 203', session: '임상생리검사학회 심포지엄', chair: '김상훈, 김성현', details: [{ time: '14:00-14:30', speaker: '김자원', topic: '양성 돌발성 두위 현훈검사에 대한 이해', affiliation: '인제대학교 상계백병원' }, { time: '14:30-15:00', speaker: '마지윤', topic: '국내외 안과 검사자 역할 구조에 대한 국제 비교', affiliation: '서울아산병원' }] },
+            { day: 20, startTime: '15:00', endTime: '17:00', category: '기타', location: '컨벤션 홀', session: '개회식 & 기조강연', chair: '', details: [{ time: '15:00-16:00', speaker: '', topic: '개회식', affiliation: '' }, { time: '16:00-17:00', speaker: 'Keynote Speaker', topic: '창립에서 미래로: 대한임상병리사협회의 60년 역사', affiliation: '' }] },
+            { day: 20, startTime: '18:00', endTime: '19:00', category: '기타', location: '전시장', session: '미팅페스티벌', chair: '', details: [] },
+            { day: 21, startTime: '09:00', endTime: '10:00', category: '수의학', location: 'Room 201', session: '주제 심포지엄: 수의학 진단검사', chair: '곽진영(경남도회)', details: [{ time: '09:00-09:30', speaker: '천두성', topic: '수의 임상병리학의 이해', affiliation: '라이프리얼포스트바이오' }, { time: '09:30-10:00', speaker: '황민', topic: '수의진단산업의 현재와 미래', affiliation: '애니웰바이오사이언스' }] },
+            { day: 21, startTime: '09:00', endTime: '12:00', category: '감염', location: 'Room 202', session: '감염안전관리 임상병리사회 심포지엄', chair: '권지연, 황원주, 김재수', details: [{ time: '09:00-10:00', speaker: '신정환', topic: '신종감염병 유행 시 임상병리사의 역할', affiliation: '인제대학교 부산백병원' }, { time: '10:00-11:00', speaker: '정상수', topic: '감염관리실 임상병리사의 업무', affiliation: '삼성서울병원' }, { time: '11:00-12:00', speaker: '홍승복', topic: '인공지능 시대의 감염관리', affiliation: '충북보건과학대학교' }] },
+            { day: 21, startTime: '09:00', endTime: '17:00', category: '중소병원', location: 'Room 203', session: '중소병의원발전위원회 심포지엄', chair: '', details: [{ time: '09:00-10:00', speaker: '서경아', topic: '요침사 외부정도관리 분석', affiliation: '인천광역시 의료원' }, { time: '10:00-11:00', speaker: '박태화', topic: '환자중심채혈 : 안전한 채혈 사례', affiliation: '서울아산병원' }, { time: '11:00-12:00', speaker: '금문식', topic: '중소병의원 검사실을 위한 문서관리 자동화', affiliation: '노을 주식회사' }, { time: '13:00-14:00', speaker: '박준범', topic: '안과 이비인후과 업무 실태와 발전 전략', affiliation: '인하대 병원' }, { time: '14:00-15:00', speaker: '송호림', topic: '건강보험수가의 이해', affiliation: '경인지방병무청' }, { time: '15:00-16:00', speaker: '이효종', topic: '무면허자 업무금지를 위한 공익신고자제도의 이해', affiliation: '인권 행정사사무소' }, { time: '16:00-17:00', speaker: '정옥희', topic: '권익-중소병의원부 실천전략', affiliation: '목동힘찬병원' }] },
+            { day: 21, startTime: '10:00', endTime: '12:00', category: '미생물', location: 'Room 201', session: '임상미생물검사학회 심포지엄', chair: '박민호, 황유연', details: [{ time: '10:00-10:40', speaker: '박동철', topic: 'Best practice of Blood culture', affiliation: 'Becton, Dickinson Korea' }, { time: '10:40-11:20', speaker: '김영권', topic: '인수공통감염병의 특성과 원-헬스', affiliation: '건양대학교 보건복지대학원' }, { time: '11:20-12:00', speaker: '김종택', topic: 'Blood Culture 위양성과 진양성 결과 비교 분석', affiliation: '울산대학교병원' }] },
+            { day: 21, startTime: '10:00', endTime: '12:00', category: '정도관리', location: 'Room 101+102+103', session: '대한진단검사정도관리협회 심포지엄', chair: '채희영(인천시회)', details: [{ time: '10:00-10:40', speaker: '정재우', topic: '임상화학검사 도입시 평가', affiliation: '동국대학교 일산병원' }, { time: '10:40-11:20', speaker: '김인숙', topic: '진단혈액검사 도입시 평가', affiliation: '부산대학교병원' }, { time: '11:20-12:00', speaker: '한민제', topic: '분자유전검사 도입시 평가', affiliation: '한림대학교 강동성심병원' }] },
+            { day: 21, startTime: '10:00', endTime: '13:00', category: '핸즈온', location: 'Exhibition Hall', session: '임상생리검사학회 핸즈온 심포지엄', chair: '', details: [{ time: '10:00-13:00', speaker: '김설화, 유정은 등', topic: '심장초음파검사 및 뇌혈류초음파검사', affiliation: '' }] },
+            { day: 21, startTime: '13:00', endTime: '14:00', category: '혈액', location: 'Room 201', session: '임상혈액검사학회 심포지엄', chair: '이현아', details: [{ time: '13:00-14:00', speaker: '문세훈', topic: '혈액학 정도관리', affiliation: '고려대학교 안산병원' }] },
+            { day: 21, startTime: '13:00', endTime: '15:00', category: '실무', location: 'Room 202', session: '실무연수강좌: 표준에서 자동화까지', chair: '조대현(경북도회)', details: [{ time: '13:00-14:00', speaker: '김홍범', topic: '임상검사실에서 CLSI를 읽다', affiliation: '경북대병원' }, { time: '14:00-15:00', speaker: '금문식', topic: 'AI와 자동화가 바꾸는 검사실', affiliation: '(주)노을' }] },
+            { day: 21, startTime: '14:00', endTime: '16:00', category: '소통', location: 'Room 201', session: '주제 심포지엄 II: 소통이 능력이다', chair: '김현준(전북도회)', details: [{ time: '14:00-14:30', speaker: '이재숙', topic: '나답게 살아남기: 병원 생활 실전 노하우', affiliation: '대구보훈병원' }, { time: '14:30-15:00', speaker: '오진규', topic: '리더의 시선에서 본 소통과 변화', affiliation: '남원의료원장' }, { time: '15:00-16:00', speaker: '이금희', topic: '병원 내 세대소통을 위한 커뮤니케이션 전략', affiliation: '삼성서울병원' }] },
+            { day: 21, startTime: '16:00', endTime: '17:00', category: '기타', location: 'Room 201', session: '슬기로운임상병리 퀴즈쇼', chair: '', details: [] },
+            { day: 21, startTime: '17:00', endTime: '18:00', category: '기타', location: '전시장', session: '폐회식', chair: '', details: [] },
+        ];
+
+        const categoryColors = {
+            '정책': 'border-sky-500', '국제': 'border-rose-500', '학회': 'border-amber-500', '기타': 'border-slate-400', '면역': 'border-violet-500', '세포': 'border-lime-500', '융합': 'border-cyan-500', '화학': 'border-orange-500', '공중보건': 'border-emerald-500', '핵의학': 'border-indigo-500', '정보': 'border-blue-500', '정도관리': 'border-teal-500', '수혈': 'border-red-500', '유전': 'border-fuchsia-500', '생리': 'border-green-500', '수의학': 'border-yellow-500', '감염': 'border-pink-500', '중소병원': 'border-purple-500', '미생물': 'border-cyan-600', '핸즈온': 'border-rose-400', '혈액': 'border-red-600', '실무': 'border-indigo-600', '소통': 'border-amber-600',
+        };
+
+        let currentDay = 20;
+        let sessionChart = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderSchedule();
+            renderChart();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            const dayTabs = document.querySelectorAll('.day-tab');
+            dayTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    currentDay = parseInt(tab.dataset.day);
+                    dayTabs.forEach(t => t.classList.remove('active-tab'));
+                    tab.classList.add('active-tab');
+                    renderSchedule();
+                });
+            });
+
+            const modal = document.getElementById('modal');
+            const modalBackdrop = document.getElementById('modal-backdrop');
+            const modalClose = document.getElementById('modal-close');
+            
+            modalBackdrop.addEventListener('click', closeModal);
+            modalClose.addEventListener('click', closeModal);
+            
+            document.getElementById('schedule-container').addEventListener('click', (e) => {
+                const card = e.target.closest('.session-card');
+                if (card) {
+                    const sessionData = JSON.parse(card.dataset.session);
+                    openModal(sessionData);
+                }
+            });
+        }
+
+        function renderSchedule() {
+            const container = document.getElementById('schedule-container');
+            const dayData = scheduleData.filter(s => s.day === currentDay);
+            
+            const locations = [...new Set(dayData.map(s => s.location))].sort();
+            const timeSlots = generateTimeSlots(dayData); // Still needed for row calculation
+
+            let html = `<div class="grid" style="grid-template-columns: repeat(${locations.length}, minmax(150px, 1fr));">`;
+            
+            // Removed the time column header: html += '<div class="sticky top-0 z-10 bg-white p-2 border-b border-r font-bold text-sm text-center">시간</div>';
+            locations.forEach(loc => {
+                html += `<div class="sticky top-0 z-10 bg-white p-2 border-b font-bold text-sm text-center truncate">${loc}</div>`;
+            });
+
+            // Removed the time slot row rendering
+            // timeSlots.forEach((time, i) => {
+            //     html += `<div class="p-2 border-b border-r text-xs text-center font-mono">${time}</div>`;
+            //     html += `<div class="col-span-${locations.length} border-b h-0"></div>`;
+            // });
+
+            container.innerHTML = html + '</div>';
+            const grid = container.querySelector('.grid');
+
+            dayData.forEach(session => {
+                // Adjusting startRow and endRow to account for the removed time column header row (which implicitly acted as row 1)
+                // Now locations are on row 1, so data starts from row 2
+                const startRow = timeToIndex(session.startTime, timeSlots) + 2; 
+                const endRow = timeToIndex(session.endTime, timeSlots) + 2;
+                
+                // col calculation is simpler now as time column is gone
+                const col = locations.indexOf(session.location) + 1; // +1 because grid columns are 1-indexed
+
+                const duration = endRow - startRow; // This calculation remains the same for vertical span
+                
+                const card = document.createElement('div');
+                card.className = `session-card m-1 p-2 rounded-lg shadow-md cursor-pointer bg-white ${categoryColors[session.category] || 'border-slate-400'}`;
+                card.style.gridRow = `${startRow} / span ${duration}`;
+                card.style.gridColumn = `${col}`;
+                card.dataset.session = JSON.stringify(session);
+                card.dataset.day = session.day;
+                
+                card.innerHTML = `
+                    <p class="font-bold text-sm">${session.session}</p>
+                    <p class="text-xs text-slate-500 mt-1">${session.startTime} - ${session.endTime}</p>
+                    <p class="text-xs font-semibold mt-2 text-teal-700">${session.category}</p>
+                `;
+                grid.appendChild(card);
+            });
+            applyFilters(); 
+        }
+
+        function generateTimeSlots(data) {
+            let minHour = 24;
+            let maxHour = 0;
+            data.forEach(s => {
+                const startHour = parseInt(s.startTime.split(':')[0]);
+                const endHour = parseInt(s.endTime.split(':')[0]);
+                if (startHour < minHour) minHour = startHour;
+                if (endHour > maxHour) maxHour = endHour;
+            });
+
+            if (maxHour % 1 !== 0) {
+                maxHour = Math.ceil(maxHour);
+            }
+
+            const slots = [];
+            for (let h = minHour; h <= maxHour; h++) {
+                slots.push(`${String(h).padStart(2, '0')}:00`);
+            }
+            return slots;
+        }
+
+        function timeToIndex(time, slots) {
+            const hour = parseInt(time.split(':')[0]);
+            const minute = parseInt(time.split(':')[1]);
+            const totalMinutes = hour * 60 + minute;
+
+            let closestSlotIndex = 0;
+            let minDiff = Infinity;
+
+            for (let i = 0; i < slots.length; i++) {
+                const slotHour = parseInt(slots[i].split(':')[0]);
+                const slotMinute = parseInt(slots[i].split(':')[1]);
+                const slotTotalMinutes = slotHour * 60 + slotMinute;
+
+                const diff = Math.abs(totalMinutes - slotTotalMinutes);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    closestSlotIndex = i;
+                }
+            }
+            return closestSlotIndex;
+        }
+
+        function renderChart() {
+            const ctx = document.getElementById('sessionChart').getContext('2d');
+            const categoryCounts = scheduleData.reduce((acc, session) => {
+                acc[session.category] = (acc[session.category] || 0) + 1;
+                return acc;
+            }, {});
+
+            const labels = Object.keys(categoryCounts);
+            const data = Object.values(categoryCounts);
+            const backgroundColors = labels.map(label => {
+                const borderColorClass = categoryColors[label] || 'border-slate-400';
+                const colorMap = { 'sky': '#0ea5e9', 'rose': '#f43f5e', 'amber': '#f59e0b', 'slate': '#64748b', 'violet': '#8b5cf6', 'lime': '#84cc16', 'cyan': '#06b6d4', 'orange': '#f97316', 'emerald': '#10b981', 'indigo': '#6366f1', 'blue': '#3b82f6', 'teal': '#14b8a6', 'red': '#ef4444', 'fuchsia': '#d946ef', 'green': '#22c55e', 'yellow': '#eab308', 'pink': '#ec4899', 'purple': '#a855f7' };
+                const colorKey = Object.keys(colorMap).find(key => borderColorClass.includes(key));
+                return colorMap[colorKey] || '#94a3b8';
+            });
+
+            sessionChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '세션 수',
+                        data: data,
+                        backgroundColor: backgroundColors,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: '분야별 세션 분포'
+                        }
+                    },
+                    onClick: (event, elements) => {
+                        // Chart click no longer triggers filter as requested.
+                        // The chart simply displays distribution.
+                    }
+                }
+            });
+        }
+
+        function openModal(session) {
+            document.getElementById('modal-title').textContent = session.session;
+            document.getElementById('modal-time').textContent = `${session.startTime} - ${session.endTime}`;
+            document.getElementById('modal-location').textContent = session.location;
+            
+            const chairContainer = document.getElementById('modal-chair-container');
+            if (session.chair) {
+                document.getElementById('modal-chair').textContent = session.chair;
+                chairContainer.style.display = 'block';
+            } else {
+                chairContainer.style.display = 'none';
+            }
+
+            const detailsContainer = document.getElementById('modal-details-container');
+            const detailsDiv = document.getElementById('modal-details');
+            detailsDiv.innerHTML = '';
+            if (session.details && session.details.length > 0) {
+                session.details.forEach(detail => {
+                    const detailEl = document.createElement('div');
+                    detailEl.className = 'mb-3 p-3 bg-slate-50 rounded';
+                    detailEl.innerHTML = `
+                        <p class="font-semibold text-slate-800">${detail.topic}</p>
+                        <p class="text-sm text-slate-600">${detail.speaker}</p>
+                        <p class="text-xs text-slate-500">${detail.affiliation}</p>
+                        <p class="text-xs text-slate-500 font-mono mt-1">${detail.time || ''}</p>
+                    `;
+                    detailsDiv.appendChild(detailEl);
+                });
+                detailsContainer.style.display = 'block';
+            } else {
+                detailsContainer.style.display = 'none';
+            }
+
+            const modal = document.getElementById('modal');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                document.getElementById('modal-backdrop').classList.remove('opacity-0');
+                document.getElementById('modal-content').classList.remove('scale-95');
+            }, 10);
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('modal');
+            document.getElementById('modal-backdrop').classList.add('opacity-0');
+            document.getElementById('modal-content').classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        // Dummy function for applyFilters since filters are removed
+        function applyFilters() {
+            const cards = document.querySelectorAll('.session-card');
+            cards.forEach(card => {
+                const cardDay = parseInt(card.dataset.day);
+                const isVisible = cardDay === currentDay;
+                card.style.display = isVisible ? 'block' : 'none';
+            });
+        }
+
+    </script>
+</body>
+</html>
